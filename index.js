@@ -66,6 +66,7 @@ const PDFDocument = require("pdfkit");
 const fs = require("fs");
 const cors = require("cors");
 const path = require("path");
+const { execSync } = require("child_process"); // Import execSync for executing shell commands
 const app = express();
 
 app.use(cors());
@@ -149,12 +150,26 @@ app.post("/convertFile", upload.single("file"), (req, res, next) => {
       );
 
       fs.copyFileSync(req.file.path, outputPathDocx);
+
       docxToPDF(outputPathDocx, outputPathPDF, (err, result) => {
         if (err) {
           console.log(err);
           return res.status(500).json({
             message: "Something went wrong",
             error: err,
+          });
+        }
+
+        // Execute a shell command to convert DOCX to PDF using LibreOffice (alternative to docx-pdf)
+        execSync(
+          `libreoffice --convert-to pdf --outdir ${outputDirectory} ${outputPathDocx}`
+        );
+
+        // Check if conversion was successful
+        if (!fs.existsSync(outputPathPDF)) {
+          return res.status(500).json({
+            message: "Conversion failed",
+            error: "PDF file not found",
           });
         }
 
