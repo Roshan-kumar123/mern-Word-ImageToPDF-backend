@@ -154,7 +154,7 @@ app.post("/convertFile", upload.single("file"), (req, res, next) => {
           console.error("Error during conversion:", err);
           return res.status(500).json({
             message: "Something went wrong during conversion",
-            error: err,
+            error: err.toString(), // Convert error object to string for better visibility
           });
         }
 
@@ -174,7 +174,7 @@ app.post("/convertFile", upload.single("file"), (req, res, next) => {
             console.error("Error during file download:", downloadErr);
             return res.status(500).json({
               message: "Error during file download",
-              error: downloadErr,
+              error: downloadErr.toString(),
             });
           }
           console.log("File downloaded");
