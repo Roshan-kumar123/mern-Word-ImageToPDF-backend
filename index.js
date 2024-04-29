@@ -61,9 +61,10 @@
 
 const express = require("express");
 const multer = require("multer");
-const PDFDocument = require("pdfkit");
 // const docxToPDF = require("docx-pdf");
+const PDFDocument = require("pdfkit");
 const mammoth = require("mammoth");
+const htmlToPdf = require("html-pdf");
 const fs = require("fs");
 const cors = require("cors");
 const path = require("path");
@@ -98,7 +99,7 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 // Endpoint to convert documents and photos to PDF
-app.post("/convertFile", upload.single("file"), (req, res, next) => {
+app.post("/convertFile", upload.single("file"), async (req, res, next) => {
   try {
     if (!req.file) {
       return res.status(400).json({ message: "No file uploaded" });
@@ -130,6 +131,8 @@ app.post("/convertFile", upload.single("file"), (req, res, next) => {
       writeStream.on("finish", () => {
         res.download(outputPath, () => {
           console.log("File downloaded");
+          // Delete the uploaded photo after download
+          fs.unlinkSync(req.file.path);
         });
       });
     } else if (
@@ -137,42 +140,42 @@ app.post("/convertFile", upload.single("file"), (req, res, next) => {
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
       req.file.mimetype === "application/msword"
     ) {
-      // If uploaded file is a DOCX or DOC file, convert it to PDF using Mammoth
+      // Define paths
       const docxFilePath = req.file.path;
-      const pdfFilePath = outputPath;
-      // If uploaded file is a DOCX or DOC file, convert it to PDF
-      // const outputPathPDF = path.join(
-      //   __dirname,
-      //   "output",
-      //   `${req.file.originalname}.pdf`
-      // );
-      // const outputPathDocx = path.join(
-      //   __dirname,
-      //   "output",
-      //   `${req.file.originalname}`
-      // );
+      const pdfFilePath = path.join(
+        __dirname,
+        "output",
+        `${req.file.originalname}.pdf`
+      );
 
-      mammoth
-        .convert({ path: docxFilePath })
-        .then(function (result) {
-          var text = result.value; // The generated HTML
-          var messages = result.messages; // Any messages, such as warnings during conversion
+      // Convert DOCX to HTML
+      const { value: html } = await mammoth.convertToHtml({
+        path: docxFilePath,
+      });
 
-          // Write the generated HTML to a file (optional)
-          fs.writeFileSync(pdfFilePath, text);
+      // Options for PDF generation
+      const pdfOptions = {
+        format: "A4", // You can change this to other formats like 'Letter', 'Legal', etc.
+        orientation: "portrait", // You can change this to 'landscape' if needed
+      };
 
-          // Download the PDF file
-          res.download(pdfFilePath, () => {
-            console.log("File downloaded");
-          });
-        })
-        .catch(function (err) {
-          console.log("Error during conversion:", err);
-          res.status(500).json({
-            message: "Something went wrong during conversion",
+      // Convert HTML to PDF
+      htmlToPdf.create(html, pdfOptions).toFile(pdfFilePath, (err) => {
+        if (err) {
+          console.error("Error during PDF generation:", err);
+          return res.status(500).json({
+            message: "Something went wrong during PDF generation",
             error: err.toString(),
           });
+        }
+
+        // Send the PDF for download
+        res.download(pdfFilePath, () => {
+          console.log("File downloaded");
+          // Delete the uploaded file after download
+          fs.unlinkSync(docxFilePath);
         });
+      });
     } else {
       // Unsupported file type
       return res.status(400).json({ message: "Unsupported file type" });
