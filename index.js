@@ -61,13 +61,13 @@
 
 const express = require("express");
 const multer = require("multer");
-// const docxToPDF = require("docx-pdf");
 const PDFDocument = require("pdfkit");
 const mammoth = require("mammoth");
 const htmlToPdf = require("html-pdf");
 const fs = require("fs");
 const cors = require("cors");
 const path = require("path");
+const sanitizeHtml = require("sanitize-html");
 const app = express();
 
 app.use(cors());
@@ -112,6 +112,8 @@ app.post("/convertFile", upload.single("file"), async (req, res, next) => {
       `${req.file.originalname}.pdf`
     );
 
+    console.log("Output path:", outputPath); // Log output path for debugging
+
     // Check file type to determine conversion method
 
     if (req.file.mimetype === "application/pdf") {
@@ -148,10 +150,25 @@ app.post("/convertFile", upload.single("file"), async (req, res, next) => {
         `${req.file.originalname}.pdf`
       );
 
+      console.log("DOCX file path:", docxFilePath); // Log DOCX file path for debugging
+      console.log("PDF file path:", pdfFilePath); // Log PDF file path for debugging
+
       // Convert DOCX to HTML
       const { value: html } = await mammoth.convertToHtml({
         path: docxFilePath,
       });
+
+      console.log("HTML:", html); // Log HTML content for debugging
+
+      // Sanitize HTML
+      const sanitizedHtml = sanitizeHtml(html, {
+        allowedTags: sanitizeHtml.defaults.allowedTags.concat(["img"]),
+        allowedAttributes: {
+          img: ["src", "alt"],
+        },
+      });
+
+      console.log("Sanitized HTML:", sanitizedHtml); // Log sanitized HTML for debugging
 
       // Options for PDF generation
       const pdfOptions = {
@@ -160,7 +177,7 @@ app.post("/convertFile", upload.single("file"), async (req, res, next) => {
       };
 
       // Convert HTML to PDF
-      htmlToPdf.create(html, pdfOptions).toFile(pdfFilePath, (err) => {
+      htmlToPdf.create(sanitizedHtml, pdfOptions).toFile(pdfFilePath, (err) => {
         if (err) {
           console.error("Error during PDF generation:", err);
           return res.status(500).json({
