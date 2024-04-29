@@ -61,13 +61,11 @@
 
 const express = require("express");
 const multer = require("multer");
+const docxToPDF = require("docx-pdf");
 const PDFDocument = require("pdfkit");
-const mammoth = require("mammoth");
-const htmlToPdf = require("html-pdf");
 const fs = require("fs");
 const cors = require("cors");
 const path = require("path");
-const sanitizeHtml = require("sanitize-html");
 const app = express();
 
 app.use(cors());
@@ -99,7 +97,7 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 // Endpoint to convert documents and photos to PDF
-app.post("/convertFile", upload.single("file"), async (req, res, next) => {
+app.post("/convertFile", upload.single("file"), (req, res, next) => {
   try {
     if (!req.file) {
       return res.status(400).json({ message: "No file uploaded" });
@@ -111,8 +109,6 @@ app.post("/convertFile", upload.single("file"), async (req, res, next) => {
       "output",
       `${req.file.originalname}.pdf`
     );
-
-    console.log("Output path:", outputPath); // Log output path for debugging
 
     // Check file type to determine conversion method
 
@@ -133,8 +129,6 @@ app.post("/convertFile", upload.single("file"), async (req, res, next) => {
       writeStream.on("finish", () => {
         res.download(outputPath, () => {
           console.log("File downloaded");
-          // Delete the uploaded photo after download
-          fs.unlinkSync(req.file.path);
         });
       });
     } else if (
@@ -142,55 +136,48 @@ app.post("/convertFile", upload.single("file"), async (req, res, next) => {
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
       req.file.mimetype === "application/msword"
     ) {
-      // Define paths
-      const docxFilePath = req.file.path;
-      const pdfFilePath = path.join(
+      // If uploaded file is a DOCX or DOC file, convert it to PDF
+      const outputPathPDF = path.join(
         __dirname,
         "output",
         `${req.file.originalname}.pdf`
       );
+      const outputPathDocx = path.join(
+        __dirname,
+        "output",
+        `${req.file.originalname}`
+      );
 
-      console.log("DOCX file path:", docxFilePath); // Log DOCX file path for debugging
-      console.log("PDF file path:", pdfFilePath); // Log PDF file path for debugging
-
-      // Convert DOCX to HTML
-      const { value: html } = await mammoth.convertToHtml({
-        path: docxFilePath,
-      });
-
-      console.log("HTML:", html); // Log HTML content for debugging
-
-      // Sanitize HTML
-      const sanitizedHtml = sanitizeHtml(html, {
-        allowedTags: sanitizeHtml.defaults.allowedTags.concat(["img"]),
-        allowedAttributes: {
-          img: ["src", "alt"],
-        },
-      });
-
-      console.log("Sanitized HTML:", sanitizedHtml); // Log sanitized HTML for debugging
-
-      // Options for PDF generation
-      const pdfOptions = {
-        format: "A4", // You can change this to other formats like 'Letter', 'Legal', etc.
-        orientation: "portrait", // You can change this to 'landscape' if needed
-      };
-
-      // Convert HTML to PDF
-      htmlToPdf.create(sanitizedHtml, pdfOptions).toFile(pdfFilePath, (err) => {
+      fs.copyFileSync(req.file.path, outputPathDocx);
+      docxToPDF(outputPathDocx, outputPathPDF, (err, result) => {
         if (err) {
-          console.error("Error during PDF generation:", err);
+          console.error("Error during conversion:", err);
           return res.status(500).json({
-            message: "Something went wrong during PDF generation",
-            error: err.toString(),
+            message: "Something went wrong during conversion",
+            error: err.toString(), // Convert error object to string for better visibility
           });
         }
 
-        // Send the PDF for download
-        res.download(pdfFilePath, () => {
+        console.log("Conversion successful");
+
+        // Delete the original DOCX file after conversion
+        try {
+          fs.unlinkSync(outputPathDocx);
+          console.log("DOCX file deleted");
+        } catch (unlinkErr) {
+          console.error("Error deleting DOCX file:", unlinkErr);
+        }
+
+        // Download the PDF file
+        res.download(outputPathPDF, (downloadErr) => {
+          if (downloadErr) {
+            console.error("Error during file download:", downloadErr);
+            return res.status(500).json({
+              message: "Error during file download",
+              error: downloadErr.toString(),
+            });
+          }
           console.log("File downloaded");
-          // Delete the uploaded file after download
-          fs.unlinkSync(docxFilePath);
         });
       });
     } else {
