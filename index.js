@@ -61,8 +61,9 @@
 
 const express = require("express");
 const multer = require("multer");
-const docxToPDF = require("docx-pdf");
 const PDFDocument = require("pdfkit");
+// const docxToPDF = require("docx-pdf");
+const mammoth = require("mammoth");
 const fs = require("fs");
 const cors = require("cors");
 const path = require("path");
@@ -136,50 +137,42 @@ app.post("/convertFile", upload.single("file"), (req, res, next) => {
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
       req.file.mimetype === "application/msword"
     ) {
+      // If uploaded file is a DOCX or DOC file, convert it to PDF using Mammoth
+      const docxFilePath = req.file.path;
+      const pdfFilePath = outputPath;
       // If uploaded file is a DOCX or DOC file, convert it to PDF
-      const outputPathPDF = path.join(
-        __dirname,
-        "output",
-        `${req.file.originalname}.pdf`
-      );
-      const outputPathDocx = path.join(
-        __dirname,
-        "output",
-        `${req.file.originalname}`
-      );
+      // const outputPathPDF = path.join(
+      //   __dirname,
+      //   "output",
+      //   `${req.file.originalname}.pdf`
+      // );
+      // const outputPathDocx = path.join(
+      //   __dirname,
+      //   "output",
+      //   `${req.file.originalname}`
+      // );
 
-      fs.copyFileSync(req.file.path, outputPathDocx);
-      docxToPDF(outputPathDocx, outputPathPDF, (err, result) => {
-        if (err) {
-          console.error("Error during conversion:", err);
-          return res.status(500).json({
-            message: "Something went wrong during conversion",
-            error: err.toString(), // Convert error object to string for better visibility
+      mammoth
+        .convert({ path: docxFilePath })
+        .then(function (result) {
+          var text = result.value; // The generated HTML
+          var messages = result.messages; // Any messages, such as warnings during conversion
+
+          // Write the generated HTML to a file (optional)
+          fs.writeFileSync(pdfFilePath, text);
+
+          // Download the PDF file
+          res.download(pdfFilePath, () => {
+            console.log("File downloaded");
           });
-        }
-
-        console.log("Conversion successful");
-
-        // Delete the original DOCX file after conversion
-        try {
-          fs.unlinkSync(outputPathDocx);
-          console.log("DOCX file deleted");
-        } catch (unlinkErr) {
-          console.error("Error deleting DOCX file:", unlinkErr);
-        }
-
-        // Download the PDF file
-        res.download(outputPathPDF, (downloadErr) => {
-          if (downloadErr) {
-            console.error("Error during file download:", downloadErr);
-            return res.status(500).json({
-              message: "Error during file download",
-              error: downloadErr.toString(),
-            });
-          }
-          console.log("File downloaded");
+        })
+        .catch(function (err) {
+          console.log("Error during conversion:", err);
+          res.status(500).json({
+            message: "Something went wrong during conversion",
+            error: err.toString(),
+          });
         });
-      });
     } else {
       // Unsupported file type
       return res.status(400).json({ message: "Unsupported file type" });
